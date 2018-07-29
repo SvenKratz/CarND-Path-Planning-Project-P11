@@ -6,6 +6,8 @@ const double K_LANE_WIDTH = 4.0; // m
 const double K_DIST_INC = 0.45; // units
 const int K_PATH_POINTS = 50;
 const double K_SLOW_REF_VEL = 29.5;
+const double K_NORMAL_REF_VEL = 49.5;
+const double K_ACCELERATION = .224; //
 
 Planner::Planner(vector<double> & map_wp_x,
         vector<double> & map_wp_y,
@@ -19,8 +21,10 @@ Planner::Planner(vector<double> & map_wp_x,
   map_waypoints_dx = map_wp_dx;
   map_waypoints_dy = map_wp_dy;
 
+  // initialize useful fields
   // starting lane is 1
   mLane = 1;
+  ref_vel = 0;
 }
 
 void Planner::update(double car_x,
@@ -62,9 +66,20 @@ void Planner::update(double car_x,
       // are we close to the other car?
       if ((check_car_s > car_s) && ((check_car_s - car_s) < 30))
       {
-        ref_vel = K_SLOW_REF_VEL;
+        too_close = true;
+        //ref_vel = K_SLOW_REF_VEL;
       }
     }
+  }
+
+
+  if (too_close)
+  {
+    ref_vel -= K_ACCELERATION;
+  }
+  else if (ref_vel < K_NORMAL_REF_VEL)
+  {
+    ref_vel += K_ACCELERATION;
   }
 
   // widely-spread spline points
@@ -174,7 +189,7 @@ void Planner::update(double car_x,
   for(int i= 1; i <= 50-prev_x.size(); i++)
   {
     // car visits each points every .02 s
-    double N = target_dist / (.02 * ref_vel/2.24);
+    double N = target_dist / (.02 * ref_vel / 2.24);
     double x_point = x_add_on+(target_x) / N;
     double y_point = s(x_point);
     x_add_on = x_point;
