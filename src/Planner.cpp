@@ -5,6 +5,7 @@
 const double K_LANE_WIDTH = 4.0; // m
 const double K_DIST_INC = 0.45; // units
 const int K_PATH_POINTS = 50;
+const double K_SLOW_REF_VEL = 29.5;
 
 Planner::Planner(vector<double> & map_wp_x,
         vector<double> & map_wp_y,
@@ -32,11 +33,39 @@ void Planner::update(double car_x,
             nlohmann::json &prev_y,
             double end_s,
             double end_d,
-            nlohmann::json &fusion)
+            nlohmann::json &sensor_fusion)
 {
   // prepare spline
 
   const int prev_size = prev_x.size();
+
+  // take sensor fusion data into account
+  if (prev_size > 0)
+  {
+    car_s = end_s;
+  }
+
+  bool too_close = false;
+
+  for (int i = 0; i < sensor_fusion.size(); i++)
+  {
+    // lane of other car
+    float d = sensor_fusion[i][6];
+    if ((d < 4+4*mLane) && (d > 4 * mLane))
+    {
+      double vx = sensor_fusion[i][3];
+      double vy = sensor_fusion[i][4];
+      double check_speed = sqrt(vx*vx + vy*vy);
+      double check_car_s = sensor_fusion[i][5];
+      check_car_s += ((double) prev_size*.02*check_speed);
+
+      // are we close to the other car?
+      if ((check_car_s > car_s) && ((check_car_s - car_s) < 30))
+      {
+        ref_vel = K_SLOW_REF_VEL;
+      }
+    }
+  }
 
   // widely-spread spline points
   vector<double> ptsx;

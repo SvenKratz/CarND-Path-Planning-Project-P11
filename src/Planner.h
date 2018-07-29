@@ -27,7 +27,7 @@ class Planner
   vector<vector<double>> mPath;
   int mLane;
   // refernece velocity
-  const double ref_vel = 49.0;
+  double ref_vel = 49.0;
 
 public:
 
