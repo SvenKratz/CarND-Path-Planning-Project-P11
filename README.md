@@ -73,7 +73,7 @@ vector<double> next_wp2 = getXY(car_s+90,
 
 The behavior code I implemented follows a a simple state machine for driving behavior as shown the following figure:
 
-![state_machine](/state_machine.png)
+![state_machine](state_diagram.png)
 
 In the "normal driving" state, the vehicle keeps to .5 miles under the speed limit and stays in the same lane.
 
