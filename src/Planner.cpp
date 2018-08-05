@@ -1,14 +1,15 @@
 #include "Planner.h"
 #include "Utils.hpp"
 #include "spline.h"
+#include <algorithm>
 
 const double K_LANE_WIDTH = 4.0; // m
 const double K_DIST_INC = 0.45; // units
-const int K_PATH_POINTS = 50;
-const double K_SLOW_REF_VEL = 29.5;
-const double K_NORMAL_REF_VEL = 49.5;
-const double K_ACCELERATION = .224; //
-
+const int K_PATH_POINTS = 50; // number of path points to project forward
+const double K_SLOW_REF_VEL = 32.0; // slow reference velocity (when slow car is in front)
+const double K_NORMAL_REF_VEL = 49.5; // normal cruising speed
+const double K_ACCELERATION = .375; // acceleration factor
+const double K_DECELERATION = .425;
 Planner::Planner(vector<double> & map_wp_x,
         vector<double> & map_wp_y,
         vector<double> & map_wp_s,
@@ -26,6 +27,141 @@ Planner::Planner(vector<double> & map_wp_x,
   mLane = 1;
   ref_vel = 0;
 }
+
+vector<nlohmann::json> Planner::findCarsOnLane(const int lane, nlohmann::json &fusion)
+{
+  vector<nlohmann::json> cars;
+  for (int i = 0; i < fusion.size(); i++)
+  {
+    // lane of other car
+    float d = fusion[i][6];
+    if ((d < 4+4*lane) && (d > 4 * lane))
+    {
+      cars.push_back(fusion[i]);
+      //cout << d << "," ;
+    }
+  }
+  //cout << endl;
+  return cars;
+}
+
+
+bool Planner::acceptableGapExists(vector<nlohmann::json> cars, double car_s, const double lookahead = 90)
+{
+
+
+
+  // sort cars on s value
+  sort(cars.begin(), cars.end(),
+            [](nlohmann::json a, nlohmann::json b)
+            {return a[5] < b[5]; });
+
+  vector<vector<double>> gaps;
+
+  for (int i = 1; i < cars.size(); i++)
+  {
+    auto last_car = cars[i-1];
+    auto car = cars[i];
+    //vector<double> gap {last_car[5], car[5]};
+    //gaps.push_back(gap);
+    double last_car_s = last_car[5];
+    double c_s = car[5];
+
+    //cout << c_s << " " << last_car_s << endl;
+
+    const double gapsize = fabs(last_car_s - c_s);
+    const double middle = 0.5 * (last_car_s + c_s) ;
+    const double delta = fabs(middle + lookahead - car_s);
+
+
+    cout << " Middle " << middle << " delta " << delta << " gapsize " << gapsize << endl;
+
+    if (delta <= 150 &&  gapsize > 25)
+    {
+      // test if there is a car near me that needs to be avoided
+      for (int k = 0; k < cars.size(); k++)
+      {
+        // test next car to see if it is behing us
+        double car_behind_s = cars[k][5];
+        const double delta = car_behind_s-car_s;
+        cout << "Car proximity test " << delta << endl;
+        // don't lane change if other car is less than 6m in front
+        bool close_in_front = (delta >= 0) && delta <= 10;
+        // don't lane change if other car is less than 20 m behind
+        bool close_in_back = (delta < 0) && delta > -25;
+        if (close_in_front || close_in_back )
+        {
+          cout << "no solution, car behind/in front" << endl;
+          return false;
+        }
+      }
+      cout << "Acceptable gap exists " << delta << " " << middle << endl;
+      return true;
+    }
+   }
+
+   return false;
+}
+
+int Planner::testLaneChange(double car_x,
+            double car_y,
+            double car_s,
+            double car_d,
+            double car_yaw,
+            double car_speed,
+            nlohmann::json &prev_x,
+            nlohmann::json &prev_y,
+            double end_s,
+            double end_d,
+            nlohmann::json &fusion)
+  {
+    const int currentLane = mLane;
+
+    // end_s as as potential car_s
+
+    int newLane = currentLane;
+
+    // randomize choice of direction to avoid getting stuck on same
+    // lane change pattern
+    int direction = ((rand() % 2) > 0) ? -1 : 1;
+
+    int test_lane = currentLane + direction;
+
+    if (test_lane < 0)
+    {
+      test_lane = currentLane + 1;
+    }
+    else if (test_lane > 2)
+    {
+      test_lane = currentLane - 1;
+    }
+
+
+    vector<nlohmann::json> carsOnLane = findCarsOnLane(test_lane, fusion);
+    // cout << "Cars On Lane Size " << carsOnLane.size() << endl ;
+    if (carsOnLane.size() == 0)
+    {
+      return test_lane;
+    }
+    else if (carsOnLane.size() == 1)
+    {
+        double s = carsOnLane[0][5];
+        if (fabs(s-end_s) >= 10)
+        {
+           return test_lane;
+        }
+    }
+    else if (carsOnLane.size() > 1)
+    {
+      if (acceptableGapExists(carsOnLane, car_s))
+      {
+        return test_lane;
+      }
+    }
+
+    cout << "Didn't find lane candidate" << endl;
+    return currentLane;
+  }
 
 void Planner::update(double car_x,
             double car_y,
@@ -64,7 +200,7 @@ void Planner::update(double car_x,
       check_car_s += ((double) prev_size*.02*check_speed);
 
       // are we close to the other car?
-      if ((check_car_s > car_s) && ((check_car_s - car_s) < 30))
+      if ((check_car_s > car_s) && ((check_car_s - car_s) < 30) && car_speed > check_speed)
       {
         too_close = true;
         //ref_vel = K_SLOW_REF_VEL;
@@ -72,10 +208,45 @@ void Planner::update(double car_x,
     }
   }
 
+  //cout << car_d << "," << mLane << endl;
 
   if (too_close)
   {
-    ref_vel -= K_ACCELERATION;
+    // we never need to slow down to a standstill, otherwise we'll get rear-ended
+    if (car_speed > K_SLOW_REF_VEL)
+    {
+      ref_vel -= K_DECELERATION;
+    }
+    else {
+        ref_vel += K_ACCELERATION;
+    }
+
+    // if not already changing lanes and at minimum speed for lane change
+    if ((fabs(car_d - (2 + mLane * 4)) < .5) && car_speed > 39)
+    {
+      // try for a lane change
+      int laneChange = testLaneChange(car_x,
+                   car_y,
+                   car_s,
+                   car_d,
+                   car_yaw,
+                   car_speed,
+                   prev_x,
+                   prev_y,
+                   end_s,
+                   end_d,
+                   sensor_fusion);
+      if (mLane != laneChange)
+      {
+        cout << "trying lane change from " << mLane << " to " << laneChange << endl;
+        mLane = laneChange;
+      }
+    }
+    else
+    {
+      cout << "Not trying lane change now" << endl;
+    }
+
   }
   else if (ref_vel < K_NORMAL_REF_VEL)
   {

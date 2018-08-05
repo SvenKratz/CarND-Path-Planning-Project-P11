@@ -28,6 +28,21 @@ class Planner
   int mLane;
   // refernece velocity
   double ref_vel;
+private:
+  int testLaneChange(double car_x,
+              double car_y,
+              double car_s,
+              double car_d,
+              double car_yaw,
+              double car_speed,
+              nlohmann::json &prev_x,
+              nlohmann::json &prev_y,
+              double end_s,
+              double end_d,
+              nlohmann::json &fusion);
+
+  vector<nlohmann::json> findCarsOnLane(const int lane, nlohmann::json &fusion);
+  bool acceptableGapExists(vector<nlohmann::json> cars, double car_s, const double lookahead);
 
 public:
 
