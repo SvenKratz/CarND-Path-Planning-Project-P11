@@ -8,8 +8,8 @@ const double K_DIST_INC = 0.45; // units
 const int K_PATH_POINTS = 50; // number of path points to project forward
 const double K_SLOW_REF_VEL = 32.0; // slow reference velocity (when slow car is in front)
 const double K_NORMAL_REF_VEL = 49.5; // normal cruising speed
-const double K_ACCELERATION = .375; // acceleration factor
-const double K_DECELERATION = .425;
+const double K_ACCELERATION = .375; // acceleration value
+const double K_DECELERATION = .425; // deceleration value
 Planner::Planner(vector<double> & map_wp_x,
         vector<double> & map_wp_y,
         vector<double> & map_wp_s,
@@ -28,6 +28,9 @@ Planner::Planner(vector<double> & map_wp_x,
   ref_vel = 0;
 }
 
+/**
+* Finds all cars on a specific lane.
+*/
 vector<nlohmann::json> Planner::findCarsOnLane(const int lane, nlohmann::json &fusion)
 {
   vector<nlohmann::json> cars;
@@ -45,7 +48,10 @@ vector<nlohmann::json> Planner::findCarsOnLane(const int lane, nlohmann::json &f
   return cars;
 }
 
-
+/**
+* Checks traffic on lane for an acceptable gap that can be
+* steered into without causing a collision.
+*/
 bool Planner::acceptableGapExists(vector<nlohmann::json> cars, double car_s, const double lookahead = 90)
 {
 
@@ -103,6 +109,10 @@ bool Planner::acceptableGapExists(vector<nlohmann::json> cars, double car_s, con
    return false;
 }
 
+/**
+* Checks the target lane traffic if it is
+* acceptable to change to target lane
+*/
 int Planner::testLaneChange(double car_x,
             double car_y,
             double car_s,
